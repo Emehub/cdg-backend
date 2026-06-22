@@ -32,7 +32,7 @@ export class PaymentsController {
   // ── CASH: manual confirmation ──────────────────────────────────────────
   @Post(':parcelId/confirm')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(StaffRole.TERMINAL_STAFF, StaffRole.BRANCH_MANAGER)
+  @Roles(StaffRole.TERMINAL_STAFF, StaffRole.BRANCH_MANAGER, StaffRole.FINANCE_ADMIN, StaffRole.IT_ADMIN)
   @HttpCode(HttpStatus.OK)
   confirm(
     @Param('parcelId') parcelId: string,
@@ -46,7 +46,7 @@ export class PaymentsController {
   // ── Paystack: initialize MoMo or Card charge ───────────────────────────
   @Post(':parcelId/initialize')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(StaffRole.TERMINAL_STAFF, StaffRole.BRANCH_MANAGER)
+  @Roles(StaffRole.TERMINAL_STAFF, StaffRole.BRANCH_MANAGER, StaffRole.FINANCE_ADMIN, StaffRole.IT_ADMIN)
   @HttpCode(HttpStatus.OK)
   initialize(
     @Param('parcelId') parcelId: string,
@@ -59,7 +59,7 @@ export class PaymentsController {
   // ── Paystack: verify + confirm on success ──────────────────────────────
   @Get(':parcelId/verify/:reference')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(StaffRole.TERMINAL_STAFF, StaffRole.BRANCH_MANAGER)
+  @Roles(StaffRole.TERMINAL_STAFF, StaffRole.BRANCH_MANAGER, StaffRole.FINANCE_ADMIN, StaffRole.IT_ADMIN)
   verify(
     @Param('parcelId') parcelId: string,
     @Param('reference') reference: string,

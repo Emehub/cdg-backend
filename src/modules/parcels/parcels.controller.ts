@@ -26,19 +26,19 @@ export class ParcelsController {
   constructor(private readonly parcelsService: ParcelsService) {}
 
   @Post()
-  @Roles(StaffRole.TERMINAL_STAFF, StaffRole.BRANCH_MANAGER)
+  @Roles(StaffRole.TERMINAL_STAFF, StaffRole.BRANCH_MANAGER, StaffRole.FINANCE_ADMIN, StaffRole.IT_ADMIN)
   create(@Body() dto: CreateParcelDto, @CurrentUser() user: any) {
     return this.parcelsService.create(dto, user.id);
   }
 
   @Patch(':id/draft')
-  @Roles(StaffRole.TERMINAL_STAFF, StaffRole.BRANCH_MANAGER)
+  @Roles(StaffRole.TERMINAL_STAFF, StaffRole.BRANCH_MANAGER, StaffRole.FINANCE_ADMIN, StaffRole.IT_ADMIN)
   autosave(@Param('id') id: string, @Body() dto: UpdateParcelDraftDto) {
     return this.parcelsService.autosaveDraft(id, dto);
   }
 
   @Post(':id/submit')
-  @Roles(StaffRole.TERMINAL_STAFF, StaffRole.BRANCH_MANAGER)
+  @Roles(StaffRole.TERMINAL_STAFF, StaffRole.BRANCH_MANAGER, StaffRole.FINANCE_ADMIN, StaffRole.IT_ADMIN)
   @HttpCode(HttpStatus.OK)
   submit(@Param('id') id: string, @CurrentUser() user: any) {
     return this.parcelsService.submit(id, user.id);

@@ -20,7 +20,7 @@ export class ReceiptsController {
   constructor(private readonly receiptsService: ReceiptsService) {}
 
   @Post(':parcelId/generate')
-  @Roles(StaffRole.TERMINAL_STAFF, StaffRole.BRANCH_MANAGER)
+  @Roles(StaffRole.TERMINAL_STAFF, StaffRole.BRANCH_MANAGER, StaffRole.FINANCE_ADMIN, StaffRole.IT_ADMIN)
   @HttpCode(HttpStatus.CREATED)
   generate(@Param('parcelId') parcelId: string, @CurrentUser() user: any) {
     return this.receiptsService.generate(parcelId, user.id);
