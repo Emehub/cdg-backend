@@ -1,0 +1,347 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum ParcelStatus {
+  PENDING_SUBMISSION
+  SUBMITTED
+  SMS_SENT
+  SMS_FAILED
+  PAYMENT_CONFIRMED
+  RECEIPT_GENERATED
+  ACTIVE
+  IN_TRANSIT
+  ARRIVED
+  DELIVERED
+  FAILED_DELIVERY
+  RETURNED
+}
+
+enum ParcelType {
+  GENERAL
+  DOCUMENT
+  FRAGILE
+  ELECTRONICS
+  CLOTHING
+}
+
+enum PaymentMethod {
+  CASH
+  MOMO
+  CARD
+}
+
+enum StaffRole {
+  TERMINAL_STAFF
+  BRANCH_MANAGER
+  FINANCE_ADMIN
+  IT_ADMIN
+}
+
+enum SmsStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+// ─────────────────────────────────────────────
+// BRANCHES
+// ─────────────────────────────────────────────
+
+model Branch {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  zone      String
+  address   String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  staff                        Staff[]
+  inboundParcels               Parcel[]                      @relation("DestinationBranch")
+  revenueEntries               RevenueEntry[]
+  receiptSequences             ReceiptSequence[]
+  dailyReconciliationSummaries DailyReconciliationSummary[]
+
+  @@map("branches")
+}
+
+// ─────────────────────────────────────────────
+// STAFF
+// ─────────────────────────────────────────────
+
+model Staff {
+  id                String    @id @default(uuid())
+  staffCode         String    @unique @map("staff_code")
+  username          String    @unique
+  passwordHash      String    @map("password_hash")
+  fullName          String    @map("full_name")
+  role              StaffRole
+  branchId          String    @map("branch_id")
+  terminalNumber    String?   @map("terminal_number")
+  failedLoginCount  Int       @default(0) @map("failed_login_count")
+  isLocked          Boolean   @default(false) @map("is_locked")
+  isActive          Boolean   @default(true) @map("is_active")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  branch                 Branch         @relation(fields: [branchId], references: [id])
+  submittedParcels       Parcel[]       @relation("SubmittedByStaff")
+  confirmedPayments      Payment[]
+  generatedReceipts      Receipt[]
+  revenueEntries         RevenueEntry[] @relation("RevenueStaff")
+  voidApprovals          RevenueEntry[] @relation("VoidApprovedBy")
+  createdFeeRules        FeeRule[]      @relation("FeeRuleCreatedBy")
+  approvedFeeRules       FeeRule[]      @relation("FeeRuleApprovedBy")
+  auditLogs              AuditLog[]
+
+  @@map("staff")
+}
+
+// ─────────────────────────────────────────────
+// PARCELS
+// ─────────────────────────────────────────────
+
+model Parcel {
+  id                  String       @id @default(uuid())
+  trackingId          String?      @unique @map("tracking_id")
+  status              ParcelStatus @default(PENDING_SUBMISSION)
+
+  // Sender
+  senderFullName      String  @map("sender_full_name")
+  senderPhone         String  @map("sender_phone")
+
+  // Receiver
+  receiverFullName    String  @map("receiver_full_name")
+  receiverPhone       String  @map("receiver_phone")
+
+  // Parcel details
+  destinationBranchId String     @map("destination_branch_id")
+  parcelType          ParcelType @map("parcel_type")
+  description         String
+  proposedFee         Decimal    @map("proposed_fee") @db.Decimal(10, 2)
+
+  // Staff audit fields
+  submittedByStaffId  String?   @map("submitted_by_staff_id")
+  submittedAt         DateTime? @map("submitted_at")
+
+  // SMS tracking
+  smsStatus           SmsStatus @default(PENDING) @map("sms_status")
+  smsSentAt           DateTime? @map("sms_sent_at")
+
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  destinationBranch   Branch       @relation("DestinationBranch", fields: [destinationBranchId], references: [id])
+  submittedByStaff    Staff?       @relation("SubmittedByStaff", fields: [submittedByStaffId], references: [id])
+  payment             Payment?
+  receipt             Receipt?
+  revenueEntry        RevenueEntry?
+  smsLogs             SmsLog[]
+  otps                ParcelOtp[]
+
+  @@map("parcels")
+}
+
+// ─────────────────────────────────────────────
+// PARCEL OTPS  (for recipient handover verification)
+// ─────────────────────────────────────────────
+
+model ParcelOtp {
+  id        String   @id @default(uuid())
+  parcelId  String   @map("parcel_id")
+  otpHash   String   @map("otp_hash")
+  expiresAt DateTime @map("expires_at")
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  parcel    Parcel   @relation(fields: [parcelId], references: [id])
+
+  @@map("parcel_otps")
+}
+
+// ─────────────────────────────────────────────
+// PAYMENTS
+// ─────────────────────────────────────────────
+
+model Payment {
+  id                 String        @id @default(uuid())
+  parcelId           String        @unique @map("parcel_id")
+  paymentMethod      PaymentMethod @map("payment_method")
+  amountPaid         Decimal       @map("amount_paid") @db.Decimal(10, 2)
+  paymentReference   String?       @map("payment_reference")
+  paystackReference  String?       @unique @map("paystack_reference")
+  idempotencyKey     String        @unique @map("idempotency_key")
+  confirmedByStaffId String        @map("confirmed_by_staff_id")
+  createdAt          DateTime      @default(now()) @map("created_at")
+
+  parcel             Parcel  @relation(fields: [parcelId], references: [id])
+  confirmedByStaff   Staff   @relation(fields: [confirmedByStaffId], references: [id])
+
+  @@map("payments")
+}
+
+// ─────────────────────────────────────────────
+// RECEIPTS
+// ─────────────────────────────────────────────
+
+model Receipt {
+  id                  String   @id @default(uuid())
+  parcelId            String   @unique @map("parcel_id")
+  trackingId          String   @unique @map("tracking_id")
+  receiptNumber       String   @unique @map("receipt_number")
+  pdfStorageKey       String   @map("pdf_storage_key")
+  qrCodeData          String   @map("qr_code_data")
+  generatedByStaffId  String   @map("generated_by_staff_id")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  parcel              Parcel  @relation(fields: [parcelId], references: [id])
+  generatedByStaff    Staff   @relation(fields: [generatedByStaffId], references: [id])
+
+  @@map("receipts")
+}
+
+// ─────────────────────────────────────────────
+// RECEIPT SEQUENCES  (atomic counter per branch per month)
+// ─────────────────────────────────────────────
+
+model ReceiptSequence {
+  id          String   @id @default(uuid())
+  branchId    String   @map("branch_id")
+  yearMonth   String   @map("year_month")
+  nextNumber  Int      @default(1) @map("next_number")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  branch      Branch   @relation(fields: [branchId], references: [id])
+
+  @@unique([branchId, yearMonth])
+  @@map("receipt_sequences")
+}
+
+// ─────────────────────────────────────────────
+// REVENUE ENTRIES  (INSERT-ONLY — never UPDATE/DELETE)
+// ─────────────────────────────────────────────
+
+model RevenueEntry {
+  id                String        @id @default(uuid())
+  parcelId          String        @unique @map("parcel_id")
+  branchId          String        @map("branch_id")
+  staffId           String        @map("staff_id")
+  transactionDate   DateTime      @map("transaction_date") @db.Date
+  transactionTime   DateTime      @map("transaction_time") @db.Time()
+  amountCharged     Decimal       @map("amount_charged") @db.Decimal(10, 2)
+  amountPaid        Decimal       @map("amount_paid") @db.Decimal(10, 2)
+  paymentMethod     PaymentMethod @map("payment_method")
+  paymentReference  String?       @map("payment_reference")
+  parcelType        ParcelType    @map("parcel_type")
+  destination       String
+  voided            Boolean       @default(false)
+  voidReason        String?       @map("void_reason")
+  voidApprovedById  String?       @map("void_approved_by_id")
+  voidRequestedById String?       @map("void_requested_by_id")
+  parentEntryId     String?       @map("parent_entry_id")
+  createdAt         DateTime      @default(now()) @map("created_at")
+
+  parcel            Parcel        @relation(fields: [parcelId], references: [id])
+  branch            Branch        @relation(fields: [branchId], references: [id])
+  staff             Staff         @relation("RevenueStaff", fields: [staffId], references: [id])
+  voidApprovedBy    Staff?        @relation("VoidApprovedBy", fields: [voidApprovedById], references: [id])
+
+  @@map("revenue_entries")
+}
+
+// ─────────────────────────────────────────────
+// FEE RULES
+// ─────────────────────────────────────────────
+
+model FeeRule {
+  id              String     @id @default(uuid())
+  parcelType      ParcelType @map("parcel_type")
+  destinationZone String     @map("destination_zone")
+  minFee          Decimal    @map("min_fee") @db.Decimal(10, 2)
+  standardFee     Decimal    @map("standard_fee") @db.Decimal(10, 2)
+  effectiveFrom   DateTime   @map("effective_from") @db.Date
+  effectiveTo     DateTime?  @map("effective_to") @db.Date
+  createdById     String     @map("created_by_id")
+  approvedById    String?    @map("approved_by_id")
+  createdAt       DateTime   @default(now()) @map("created_at")
+
+  createdBy       Staff      @relation("FeeRuleCreatedBy", fields: [createdById], references: [id])
+  approvedBy      Staff?     @relation("FeeRuleApprovedBy", fields: [approvedById], references: [id])
+
+  @@map("fee_rules")
+}
+
+// ─────────────────────────────────────────────
+// DAILY RECONCILIATION SUMMARIES
+// ─────────────────────────────────────────────
+
+model DailyReconciliationSummary {
+  id               String   @id @default(uuid())
+  branchId         String   @map("branch_id")
+  date             DateTime @db.Date
+  totalReceipts    Int      @map("total_receipts")
+  totalRevenue     Decimal  @map("total_revenue") @db.Decimal(10, 2)
+  cashTotal        Decimal  @map("cash_total") @db.Decimal(10, 2)
+  momoTotal        Decimal  @map("momo_total") @db.Decimal(10, 2)
+  cardTotal        Decimal  @map("card_total") @db.Decimal(10, 2)
+  hasDiscrepancy   Boolean  @default(false) @map("has_discrepancy")
+  computedAt       DateTime @default(now()) @map("computed_at")
+
+  branch           Branch   @relation(fields: [branchId], references: [id])
+
+  @@unique([branchId, date])
+  @@map("daily_reconciliation_summaries")
+}
+
+// ─────────────────────────────────────────────
+// SMS LOGS
+// ─────────────────────────────────────────────
+
+model SmsLog {
+  id         String    @id @default(uuid())
+  parcelId   String    @map("parcel_id")
+  phone      String
+  message    String
+  provider   String
+  status     SmsStatus @default(PENDING)
+  reference  String?
+  error      String?
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  parcel     Parcel    @relation(fields: [parcelId], references: [id])
+
+  @@map("sms_logs")
+}
+
+// ─────────────────────────────────────────────
+// AUDIT LOGS  (immutable — never updated/deleted)
+// ─────────────────────────────────────────────
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  action      String
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id")
+  staffId     String?  @map("staff_id")
+  branchId    String?  @map("branch_id")
+  metadata    Json?
+  ipAddress   String?  @map("ip_address")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  staff       Staff?   @relation(fields: [staffId], references: [id])
+
+  @@map("audit_logs")
+}
