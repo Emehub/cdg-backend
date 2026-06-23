@@ -3,10 +3,12 @@ import {
   Post,
   Get,
   Param,
+  Res,
   UseGuards,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { ReceiptsService } from './receipts.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -26,13 +28,15 @@ export class ReceiptsController {
     return this.receiptsService.generate(parcelId, user.id);
   }
 
-  @Get(':parcelId/reprint')
-  @Roles(
-    StaffRole.TERMINAL_STAFF,
-    StaffRole.BRANCH_MANAGER,
-    StaffRole.FINANCE_ADMIN,
-  )
-  reprint(@Param('parcelId') parcelId: string) {
-    return this.receiptsService.reprint(parcelId);
+  @Get(':parcelId/pdf')
+  @Roles(StaffRole.TERMINAL_STAFF, StaffRole.BRANCH_MANAGER, StaffRole.FINANCE_ADMIN, StaffRole.IT_ADMIN)
+  async streamPdf(@Param('parcelId') parcelId: string, @Res() res: Response) {
+    const pdfBuffer = await this.receiptsService.reprintPdf(parcelId);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'inline; filename="receipt.pdf"',
+      'Content-Length': pdfBuffer.length,
+    });
+    res.end(pdfBuffer);
   }
 }

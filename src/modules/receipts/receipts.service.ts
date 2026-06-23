@@ -129,21 +129,62 @@ export class ReceiptsService {
 
   async reprint(parcelId: string) {
     const receipt = await this.prisma.receipt.findUnique({ where: { parcelId } });
-
     if (!receipt) {
       throw new NotFoundException(
         `No receipt found for parcel ${parcelId}. Generate receipt first.`,
       );
     }
-
-    const signedUrl = await this.storage.getSignedDownloadUrl(receipt.pdfStorageKey, 3600);
-
     return {
       trackingId: receipt.trackingId,
       receiptNumber: receipt.receiptNumber,
-      downloadUrl: signedUrl,
-      expiresInSeconds: 3600,
     };
+  }
+
+  async reprintPdf(parcelId: string): Promise<Buffer> {
+    const receipt = await this.prisma.receipt.findUnique({
+      where: { parcelId },
+      include: {
+        parcel: {
+          include: {
+            payment: true,
+            destinationBranch: { select: { name: true, code: true, zone: true } },
+            submittedByStaff: {
+              select: {
+                fullName: true,
+                staffCode: true,
+                branchId: true,
+                terminalNumber: true,
+                branch: { select: { name: true, code: true } },
+              },
+            },
+          },
+        },
+        generatedByStaff: {
+          include: { branch: { select: { name: true, code: true } } },
+        },
+      },
+    });
+
+    if (!receipt) throw new NotFoundException('No receipt found. Generate receipt first.');
+    if (!receipt.parcel.payment) throw new NotFoundException('Payment record missing.');
+
+    const qrCodeDataUrl = await QRCode.toDataURL(receipt.trackingId, {
+      width: 200,
+      margin: 2,
+      color: { dark: '#1B5E20', light: '#ffffff' },
+    });
+
+    const html = this.buildReceiptHtml({
+      trackingId: receipt.trackingId,
+      receiptNumber: receipt.receiptNumber,
+      parcel: receipt.parcel,
+      payment: receipt.parcel.payment,
+      staff: receipt.generatedByStaff,
+      generatedAt: receipt.createdAt,
+      qrCodeDataUrl,
+    });
+
+    return this.renderPdf(html);
   }
 
   // ─── Private helpers ─────────────────────────────────────────────────────
