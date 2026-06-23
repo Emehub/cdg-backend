@@ -43,6 +43,9 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
 COPY package*.json ./
 
+# Re-generate Prisma Client for the runner's OpenSSL environment (debian-openssl-3.0.x)
+RUN npx prisma generate
+
 ENV NODE_ENV=production
 ENV PORT=4000
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
